@@ -73,9 +73,15 @@ async function main() {
   const desig = await post('/designations', { title: 'Senior Engineer', level: 5, department: 'Engineering' });
   rec('POST /designations (auto-code, dept resolve)', desig.status === 201, `code=${desig.j.data?.code}`);
 
-  // Attendance → workHours
-  const att = await post('/attendance', { employee: userId, date: '2026-07-01', checkIn: '2026-07-01T09:00:00Z', checkOut: '2026-07-01T17:30:00Z', status: 'PRESENT' });
-  rec('POST /attendance (workHours + employeeName)', att.status === 201 && att.j.data.workHours === 8.5 && !!att.j.data.employeeName, `wh=${att.j.data?.workHours} name=${att.j.data?.employeeName}`);
+  // Attendance → HH:MM times + workHours
+  const att = await post('/attendance', { employee: userId, date: '2026-07-01', checkIn: '09:00', checkOut: '17:30', status: 'PRESENT' });
+  rec('POST /attendance ("HH:MM" times, workHours=8.5)', att.status === 201 && att.j.data.workHours === 8.5 && att.j.data.checkIn === '09:00', `wh=${att.j.data?.workHours} in=${att.j.data?.checkIn}`);
+  // Finding 2: employee sent as EMAIL should still resolve the name
+  const attEmail = await post('/attendance', { employee: 'admin@hrms.local', date: '2026-07-02', checkIn: '10:00', checkOut: '18:00' });
+  rec('POST /attendance (employee=email → name resolved)', attEmail.status === 201 && attEmail.j.data.employeeName === 'Super Admin', `name=${attEmail.j.data?.employeeName}`);
+  // overnight/night shift
+  const night = await post('/attendance', { employee: userId, date: '2026-07-03', checkIn: '22:00', checkOut: '06:00' });
+  rec('POST /attendance (overnight shift = 8h)', night.j.data?.workHours === 8, `wh=${night.j.data?.workHours}`);
 
   // Leave → days
   const lv = await post('/leaves', { employee: userId, type: 'ANNUAL', startDate: '2026-07-10', endDate: '2026-07-12', reason: 'Trip' });

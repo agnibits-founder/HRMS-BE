@@ -582,8 +582,8 @@ model Attendance {
   employeeId   String?
   employeeName String?
   date         DateTime
-  checkIn      DateTime?
-  checkOut     DateTime?
+  checkIn      String? // time-of-day "HH:MM" (e.g. "09:00")
+  checkOut     String? // time-of-day "HH:MM" (e.g. "17:30")
   status       AttendanceStatus @default(PRESENT)
   notes        String?
   createdAt    DateTime         @default(now())

@@ -5,9 +5,10 @@ import {
   listQuery,
   isoDate,
   optDate,
+  hhmm,
   nstr,
   ostr,
-  resolveUserName,
+  resolveUser,
   resolveCandidateName,
   resolveDepartmentId,
   workHoursBetween,
@@ -50,10 +51,11 @@ const partial = (shape) => z.object(shape).partial().refine((d) => Object.keys(d
   message: 'At least one field is required',
 });
 
-// Map a denormalized "employee" reference (id) → { employeeId, employeeName }.
+// Map a denormalized "employee" reference (id OR email) → { employeeId, employeeName }.
 const withEmployee = async (raw) => {
   if (raw.employee === undefined) return {};
-  return { employeeId: raw.employee || null, employeeName: await resolveUserName(raw.employee) };
+  const u = await resolveUser(raw.employee);
+  return { employeeId: u.id, employeeName: u.name };
 };
 
 export const hrModules = [
@@ -138,16 +140,16 @@ export const hrModules = [
       create: z.object({
         employee: nstr,
         date: isoDate,
-        checkIn: optDate,
-        checkOut: optDate,
+        checkIn: hhmm,
+        checkOut: hhmm,
         status: z.enum(E.attendance).optional(),
         notes: ostr,
       }),
       update: partial({
         employee: z.string(),
         date: isoDate,
-        checkIn: optDate,
-        checkOut: optDate,
+        checkIn: hhmm,
+        checkOut: hhmm,
         status: z.enum(E.attendance),
         notes: ostr,
       }),
@@ -595,8 +597,9 @@ export const hrModules = [
         description: body.description,
       };
       if (body.requester !== undefined) {
-        data.requesterId = body.requester || null;
-        data.requesterName = await resolveUserName(body.requester);
+        const u = await resolveUser(body.requester);
+        data.requesterId = u.id;
+        data.requesterName = u.name;
       }
       return data;
     },
