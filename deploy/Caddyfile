@@ -1,16 +1,18 @@
 # Caddy reverse proxy with automatic HTTPS (Let's Encrypt).
-# Caddy obtains + auto-renews the TLS certificate for this domain — no manual
-# cert steps. Requires ports 80 (ACME challenge) and 443 (HTTPS) open, and the
+# Caddy obtains + auto-renews a TLS certificate per domain — no manual cert
+# steps. Requires ports 80 (ACME challenge) and 443 (HTTPS) open, and each
 # domain's DNS pointing at this server.
 #
-# To change the domain: edit the hostname below and `docker compose restart caddy`.
+# To add a domain: point its DNS here, add a `<domain> { import hrms_api }`
+# block below, and `docker compose -f docker-compose.prod.yml restart caddy`.
 
 {
 	# Email used for Let's Encrypt registration / expiry notices.
 	email admin@agnibits.com
 }
 
-agnihr.duckdns.org {
+# Shared reverse-proxy config for the HRMS API (reused by every domain).
+(hrms_api) {
 	encode gzip zstd
 
 	# Max upload size (matches app limit for bulk import / documents).
@@ -20,4 +22,14 @@ agnihr.duckdns.org {
 
 	# Proxy everything (including Socket.io WebSocket upgrades) to the API.
 	reverse_proxy api:4000
+}
+
+# Primary production domain
+api.agnibits.com {
+	import hrms_api
+}
+
+# Legacy / transition domain (kept live during the cutover)
+agnihr.duckdns.org {
+	import hrms_api
 }
