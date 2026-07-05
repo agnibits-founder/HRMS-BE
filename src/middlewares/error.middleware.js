@@ -43,11 +43,15 @@ export function errorHandler(err, req, res, next) {
     logger.warn({ code: normalized.code, msg: normalized.message, path: req.originalUrl }, 'Request error');
   }
 
+  // Mask only unexpected (non-operational) server faults in production; keep
+  // operational messages (e.g. 503 AI not configured, 502 upstream) visible.
+  const mask = status >= 500 && config.isProd && !normalized.isOperational;
+
   res.status(status).json({
     success: false,
     error: {
       code: normalized.code,
-      message: status >= 500 && config.isProd ? 'Internal server error' : normalized.message,
+      message: mask ? 'Internal server error' : normalized.message,
       ...(normalized.details ? { details: normalized.details } : {}),
     },
     requestId: getRequestId(),
