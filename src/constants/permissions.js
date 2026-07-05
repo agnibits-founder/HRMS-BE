@@ -20,6 +20,7 @@ export const CRUD_RESOURCES = [
   'designation',
   'attendance',
   'leave',
+  'leaveType',
   'holiday',
   'payroll',
   'job',

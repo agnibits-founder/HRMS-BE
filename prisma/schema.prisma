@@ -950,3 +950,29 @@ model Notification {
   @@index([read])
   @@map("notifications")
 }
+
+model LeavePolicy {
+  id              String       @id @default(cuid())
+  companyId       String
+  name            String
+  code            String
+  daysPerYear     Float        @default(0)
+  paid            Boolean      @default(true)
+  carryForward    Boolean      @default(false)
+  maxCarryForward Float        @default(0) // 0 = unlimited
+  color           String?
+  status          EntityStatus @default(ACTIVE)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+  deletedById String?
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("leave_types")
+}

@@ -196,6 +196,46 @@ export const hrModules = [
   }),
 
   defineCrudModule({
+    resource: 'leave-types',
+    model: 'leavePolicy',
+    entity: 'leaveType',
+    permissionPrefix: 'leaveType',
+    searchFields: ['name', 'code'],
+    sortFields: ['createdAt', 'name', 'code', 'daysPerYear', 'status'],
+    filters: { status: 'status' },
+    defaultSort: { name: 'asc' },
+    // Codes are uppercase and unique per company.
+    mapInput: (body) => ({
+      ...body,
+      ...(body.code !== undefined ? { code: String(body.code).trim().toUpperCase() } : {}),
+    }),
+    exportable: true,
+    schemas: {
+      list: listQuery({ status: z.enum(E.entity).optional() }),
+      create: z.object({
+        name: nstr,
+        code: nstr,
+        daysPerYear: z.coerce.number().min(0),
+        paid: z.boolean().optional(),
+        carryForward: z.boolean().optional(),
+        maxCarryForward: z.coerce.number().min(0).optional(),
+        color: ostr,
+        status: z.enum(E.entity).optional(),
+      }),
+      update: partial({
+        name: nstr,
+        code: nstr,
+        daysPerYear: z.coerce.number().min(0),
+        paid: z.boolean(),
+        carryForward: z.boolean(),
+        maxCarryForward: z.coerce.number().min(0),
+        color: ostr,
+        status: z.enum(E.entity),
+      }),
+    },
+  }),
+
+  defineCrudModule({
     resource: 'holidays',
     model: 'holiday',
     permissionPrefix: 'holiday',

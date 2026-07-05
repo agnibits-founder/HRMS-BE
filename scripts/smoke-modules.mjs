@@ -87,6 +87,14 @@ async function main() {
   const lv = await post('/leaves', { employee: userId, type: 'ANNUAL', startDate: '2026-07-10', endDate: '2026-07-12', reason: 'Trip' });
   rec('POST /leaves (days computed)', lv.status === 201 && lv.j.data.days === 3, `days=${lv.j.data?.days}`);
 
+  // Leave types (policy) — code auto-uppercased
+  const lt = await post('/leave-types', { name: 'Annual Leave', code: 'annual', daysPerYear: 20, paid: true, carryForward: true, maxCarryForward: 5, color: '#22c55e' });
+  rec('POST /leave-types (code uppercased, defaults)', lt.status === 201 && lt.j.data.code === 'ANNUAL' && lt.j.data.status === 'ACTIVE', `code=${lt.j.data?.code}`);
+  const ltList = await get('/leave-types?status=ACTIVE&search=annual');
+  rec('GET /leave-types (filter+search)', ltList.j.meta.pagination.total >= 1);
+  const ltDup = await post('/leave-types', { name: 'Annual', code: 'ANNUAL', daysPerYear: 10 });
+  rec('POST /leave-types (duplicate code → 409)', ltDup.status === 409);
+
   // Payroll → net
   const pay = await post('/payroll', { employee: userId, period: '2026-07', gross: 5000, deductions: 500, bonus: 200 });
   rec('POST /payroll (net = gross-ded+bonus)', pay.status === 201 && pay.j.data.net === 4700, `net=${pay.j.data?.net}`);
