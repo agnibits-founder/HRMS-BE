@@ -27,6 +27,7 @@ const shapeCompany = (c) => ({
   plan: c.plan,
   status: c.status,
   adminEmail: c.adminEmail,
+  logoUrl: c.logoUrl,
   employeeCount: c._count?.users ?? c.employeeCount ?? 0,
   createdAt: c.createdAt,
   updatedAt: c.updatedAt,
@@ -189,6 +190,17 @@ export const companyService = {
     await revokeCompanySessions(id, 'admin_password_reset');
     await record({ action: AuditAction.PASSWORD_CHANGE, entity: 'company', entityId: id, metadata: { adminId: adminUser.id }, actorId });
     return { email: adminUser.email, tempPassword };
+  },
+
+  /** Save an uploaded logo to storage and store its public URL on the company. */
+  async setLogo(id, file, actorId) {
+    const company = await prisma.company.findFirst({ where: { id, deletedAt: null } });
+    if (!company) throw ApiError.notFound('Company not found', { code: 'COMPANY_NOT_FOUND' });
+    const { saveFile } = await import('../../storage/storage.service.js');
+    const saved = await saveFile(file);
+    await prisma.company.update({ where: { id }, data: { logoUrl: saved.url, updatedById: actorId } });
+    await record({ action: AuditAction.UPDATE, entity: 'company', entityId: id, metadata: { logoUrl: saved.url }, actorId });
+    return this.getById(id);
   },
 
   // ── Tenant-scoped ("own company" settings for the HRMS product) ────────

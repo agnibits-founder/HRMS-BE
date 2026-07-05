@@ -345,6 +345,9 @@ class AuthService {
       avatarUrl: user.avatarUrl,
       status: user.status,
       companyId: user.companyId,
+      company: user.company
+        ? { id: user.company.id, name: user.company.name, logoUrl: user.company.logoUrl }
+        : null,
       emailVerified: !!user.emailVerifiedAt,
       mfaEnabled: user.mfaEnabled,
       roles: user.roleNames ?? [],

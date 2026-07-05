@@ -28,7 +28,7 @@ class UserRepository extends BaseRepository {
       where: { ...where, deletedAt: null },
       include: {
         roles: { include: { role: true } },
-        company: { select: { id: true, status: true } },
+        company: { select: { id: true, name: true, status: true, logoUrl: true } },
       },
     });
     if (!user) return null;

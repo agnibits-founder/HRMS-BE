@@ -14,10 +14,10 @@ function fileFilter(allowed) {
   };
 }
 
-export function upload({ field = 'file', maxCount = 1, allowed } = {}) {
+export function upload({ field = 'file', maxCount = 1, allowed, maxBytes } = {}) {
   const m = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: config.storage.maxUploadBytes },
+    limits: { fileSize: maxBytes ?? config.storage.maxUploadBytes },
     fileFilter: fileFilter(allowed),
   });
   return maxCount > 1 ? m.array(field, maxCount) : m.single(field);

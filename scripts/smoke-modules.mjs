@@ -184,6 +184,23 @@ async function main() {
   const reset = await post(`/companies/${newCoId}/reset-admin`, {});
   rec('POST /companies/:id/reset-admin', reset.status === 200 && !!reset.j.data?.tempPassword && reset.j.data.email === 'jane@acme.test');
 
+  // Company logo upload (local storage in test) + logoUrl in auth responses
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const fd = new FormData();
+  fd.append('logo', new Blob([png], { type: 'image/png' }), 'logo.png');
+  const logoRes = await fetch(`${api}/companies/${ownId}/logo`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: fd });
+  const logoJson = await logoRes.json();
+  rec('POST /companies/:id/logo', logoRes.status === 200 && !!logoJson.data?.logoUrl, `url=${logoJson.data?.logoUrl}`);
+  const relog = await post('/auth/login', { email: 'admin@hrms.local', password: 'Admin@12345' });
+  rec('login → user.company.logoUrl present', !!relog.j.data?.user?.company?.logoUrl);
+  const me2 = await get('/auth/me');
+  rec('/auth/me → user.company (name+logoUrl)', !!me2.j.data?.company?.name && !!me2.j.data?.company?.logoUrl);
+  // reject non-image
+  const badLogo = new FormData();
+  badLogo.append('logo', new Blob([Buffer.from('hello')], { type: 'text/plain' }), 'x.txt');
+  const badRes = await fetch(`${api}/companies/${ownId}/logo`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: badLogo });
+  rec('POST /companies/:id/logo (non-image → 400)', badRes.status === 400);
+
   // AI (no GROQ key in test → graceful degrade)
   const aiStatus = await get('/ai/status');
   rec('GET /ai/status (configured:false w/o key)', aiStatus.j.data?.configured === false);

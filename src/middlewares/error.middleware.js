@@ -28,6 +28,11 @@ export function errorHandler(err, req, res, next) {
     normalized = mapPrismaError(err);
   } else if (err instanceof Prisma.PrismaClientValidationError) {
     normalized = ApiError.badRequest('Invalid database query', { code: 'DB_VALIDATION_ERROR' });
+  } else if (err?.name === 'MulterError') {
+    const tooLarge = err.code === 'LIMIT_FILE_SIZE';
+    normalized = new ApiError(tooLarge ? 413 : 400, tooLarge ? 'File is too large' : `Upload error: ${err.message}`, {
+      code: tooLarge ? 'FILE_TOO_LARGE' : 'UPLOAD_ERROR',
+    });
   } else if (!(err instanceof ApiError)) {
     normalized = new ApiError(500, err.message || 'Internal server error', {
       code: 'INTERNAL_ERROR',

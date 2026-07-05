@@ -10,6 +10,7 @@ import { validate } from '../../middlewares/validate.middleware.js';
 import { auditRequest } from '../../middlewares/audit.middleware.js';
 import { buildPaginationMeta } from '../../utils/pagination.js';
 import { passwordPolicy } from '../auth/auth.validators.js';
+import { upload, IMAGE_MIME } from '../../middlewares/upload.middleware.js';
 
 /**
  * Company module — dual purpose:
@@ -146,6 +147,38 @@ router
       return noContent(res);
     })
   );
+
+/**
+ * @openapi
+ * /companies/{id}/logo:
+ *   post:
+ *     tags: [Companies]
+ *     summary: Upload a company logo (image, ≤2MB) — platform admin (any) or tenant admin (own)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [logo]
+ *             properties: { logo: { type: string, format: binary } }
+ *     responses:
+ *       200: { description: Updated company (with logoUrl) }
+ *       413: { description: File too large }
+ */
+router.post(
+  '/:id/logo',
+  authorize('company:update'),
+  upload({ field: 'logo', allowed: IMAGE_MIME, maxBytes: 2 * 1024 * 1024 }),
+  asyncHandler(async (req, res) => {
+    if (!isPlatformAdmin(req.user) && req.params.id !== req.user.companyId) {
+      throw ApiError.forbidden('Cannot modify another company');
+    }
+    if (!req.file) throw ApiError.badRequest('No logo file uploaded (field "logo")', { code: 'NO_FILE' });
+    const updated = await companyService.setLogo(req.params.id, req.file, req.user.id);
+    return ok(res, updated, 'Logo updated');
+  })
+);
 
 /**
  * @openapi
