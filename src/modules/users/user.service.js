@@ -7,6 +7,7 @@ import { templates } from '../../notifications/mail.service.js';
 import { recordChange, record, AuditAction } from '../audit/audit.service.js';
 import { buildWorkbookBuffer, parseSheet } from '../../utils/excel.js';
 import { createUserSchema } from './user.validators.js';
+import { tenantWhere } from '../../utils/tenant.js';
 
 const PUBLIC_SELECT = {
   id: true,
@@ -26,9 +27,10 @@ const PUBLIC_SELECT = {
 };
 
 /**
- * User management business logic (admin-facing). Enforces uniqueness, hashes
- * credentials, manages role assignment, writes audit trails, and powers bulk
- * import/export.
+ * User management business logic (admin-facing). Multi-tenant: every operation
+ * is confined to the caller's company (`ctx.companyId`); only the platform
+ * SUPER_ADMIN (`ctx.isSuperAdmin`) may span companies. `ctx` is built from the
+ * authenticated user via utils/tenant.js.
  */
 class UserService {
   #shape(user) {
@@ -37,27 +39,40 @@ class UserService {
     return { ...rest, roles: (roles ?? []).map((ur) => ur.role) };
   }
 
-  async list(query) {
+  /** Resolve the company a write should target (tenant users are forced to own). */
+  #targetCompany(ctx, requested) {
+    return ctx.isSuperAdmin ? (requested ?? ctx.companyId ?? null) : ctx.companyId;
+  }
+
+  async list(query, ctx) {
     const where = {};
     if (query.status) where.status = query.status;
-    if (query.companyId) where.companyId = query.companyId;
     if (query.roleId) where.roles = { some: { roleId: query.roleId } };
-
+    // Super admin may optionally filter by company; tenants are locked to theirs.
+    if (ctx.isSuperAdmin) {
+      if (query.companyId) where.companyId = query.companyId;
+    } else {
+      where.companyId = ctx.companyId;
+    }
     const { items, pagination } = await userRepository.paginate(query, where, { select: PUBLIC_SELECT });
     return { items: items.map((u) => this.#shape(u)), pagination };
   }
 
-  async getById(id) {
-    const user = await prisma.user.findFirst({ where: { id, deletedAt: null }, select: PUBLIC_SELECT });
+  async getById(id, ctx) {
+    const user = await prisma.user.findFirst({
+      where: tenantWhere(ctx, { id, deletedAt: null }),
+      select: PUBLIC_SELECT,
+    });
     if (!user) throw ApiError.notFound('User not found', { code: 'USER_NOT_FOUND' });
     return this.#shape(user);
   }
 
-  async create(data, actorId) {
+  async create(data, ctx) {
     const existing = await userRepository.findByEmail(data.email);
     if (existing) throw ApiError.conflict('A user with this email already exists', { code: 'EMAIL_TAKEN' });
 
-    if (data.roleIds?.length) await this.#assertRolesExist(data.roleIds, data.companyId);
+    const companyId = this.#targetCompany(ctx, data.companyId);
+    if (data.roleIds?.length) await this.#assertRolesExist(data.roleIds, companyId);
 
     const tempPassword = data.password ?? this.#generateTempPassword();
     const passwordHash = await hashPassword(tempPassword);
@@ -69,87 +84,91 @@ class UserService {
           firstName: data.firstName,
           lastName: data.lastName,
           phone: data.phone,
-          companyId: data.companyId ?? null,
+          companyId,
           status: data.status ?? 'PENDING',
           passwordHash,
           extraPermissions: [],
-          createdById: actorId,
+          createdById: ctx.actorId,
         },
       });
       if (data.roleIds?.length) {
         await tx.userRole.createMany({
-          data: data.roleIds.map((roleId) => ({ userId: created.id, roleId, assignedById: actorId })),
+          data: data.roleIds.map((roleId) => ({ userId: created.id, roleId, assignedById: ctx.actorId })),
           skipDuplicates: true,
         });
       }
       return created;
     });
 
-    await record({ action: AuditAction.CREATE, entity: 'user', entityId: user.id, after: { email: user.email }, actorId });
+    await record({ action: AuditAction.CREATE, entity: 'user', entityId: user.id, after: { email: user.email }, actorId: ctx.actorId });
 
     if (data.sendWelcomeEmail) {
       const tpl = templates.welcome({ name: user.firstName, email: user.email, tempPassword });
       await enqueueEmail({ to: user.email, ...tpl });
     }
-    return this.getById(user.id);
+    return this.getById(user.id, ctx);
   }
 
-  async update(id, data, actorId) {
-    const before = await prisma.user.findFirst({ where: { id, deletedAt: null } });
+  async update(id, data, ctx) {
+    const before = await prisma.user.findFirst({ where: tenantWhere(ctx, { id, deletedAt: null }) });
     if (!before) throw ApiError.notFound('User not found', { code: 'USER_NOT_FOUND' });
 
-    const after = await prisma.user.update({
-      where: { id },
-      data: { ...data, updatedById: actorId },
-    });
-    await recordChange({ action: AuditAction.UPDATE, entity: 'user', entityId: id, before, after, actorId });
-    return this.getById(id);
+    // Tenant admins can never move a user to another company.
+    const patch = { ...data, updatedById: ctx.actorId };
+    if (!ctx.isSuperAdmin) delete patch.companyId;
+
+    const after = await prisma.user.update({ where: { id }, data: patch });
+    await recordChange({ action: AuditAction.UPDATE, entity: 'user', entityId: id, before, after, actorId: ctx.actorId });
+    return this.getById(id, ctx);
   }
 
   async updateProfile(id, data) {
     await prisma.user.update({ where: { id }, data });
-    return this.getById(id);
+    return prisma.user.findFirst({ where: { id }, select: PUBLIC_SELECT }).then((u) => this.#shape(u));
   }
 
-  async remove(id, actorId) {
-    const user = await prisma.user.findFirst({ where: { id, deletedAt: null } });
+  async remove(id, ctx) {
+    const user = await prisma.user.findFirst({ where: tenantWhere(ctx, { id, deletedAt: null }) });
     if (!user) throw ApiError.notFound('User not found', { code: 'USER_NOT_FOUND' });
-    if (id === actorId) throw ApiError.badRequest('You cannot delete your own account', { code: 'SELF_DELETE' });
+    if (id === ctx.actorId) throw ApiError.badRequest('You cannot delete your own account', { code: 'SELF_DELETE' });
 
-    await userRepository.remove(id, { actorId });
-    // Revoke all sessions of the deleted user.
+    await userRepository.remove(id, { actorId: ctx.actorId });
     await prisma.session.updateMany({
       where: { userId: id, revokedAt: null },
       data: { revokedAt: new Date(), revokedReason: 'user_deleted' },
     });
-    await record({ action: AuditAction.DELETE, entity: 'user', entityId: id, actorId });
+    await record({ action: AuditAction.DELETE, entity: 'user', entityId: id, actorId: ctx.actorId });
   }
 
-  async restore(id, actorId) {
-    const user = await prisma.user.findFirst({ where: { id, deletedAt: { not: null } } });
+  async restore(id, ctx) {
+    const user = await prisma.user.findFirst({ where: tenantWhere(ctx, { id, deletedAt: { not: null } }) });
     if (!user) throw ApiError.notFound('Deleted user not found', { code: 'USER_NOT_FOUND' });
     await userRepository.restore(id);
-    await record({ action: AuditAction.RESTORE, entity: 'user', entityId: id, actorId });
-    return this.getById(id);
+    await record({ action: AuditAction.RESTORE, entity: 'user', entityId: id, actorId: ctx.actorId });
+    return this.getById(id, ctx);
   }
 
-  async assignRoles(id, roleIds, actorId) {
-    const user = await prisma.user.findFirst({ where: { id, deletedAt: null } });
+  async assignRoles(id, roleIds, ctx) {
+    const user = await prisma.user.findFirst({ where: tenantWhere(ctx, { id, deletedAt: null }) });
     if (!user) throw ApiError.notFound('User not found', { code: 'USER_NOT_FOUND' });
     await this.#assertRolesExist(roleIds, user.companyId);
-    await userRepository.setRoles(id, roleIds, actorId);
-    await record({ action: AuditAction.UPDATE, entity: 'user', entityId: id, metadata: { roleIds }, actorId });
-    return this.getById(id);
+    await userRepository.setRoles(id, roleIds, ctx.actorId);
+    await record({ action: AuditAction.UPDATE, entity: 'user', entityId: id, metadata: { roleIds }, actorId: ctx.actorId });
+    return this.getById(id, ctx);
   }
 
   // ── Bulk export ────────────────────────────────────────────────────
-  async exportToExcel(query) {
-    const where = {};
+  async exportToExcel(query, ctx) {
+    const where = { deletedAt: null };
     if (query.status) where.status = query.status;
-    if (query.companyId) where.companyId = query.companyId;
+    if (ctx.isSuperAdmin) {
+      if (query.companyId) where.companyId = query.companyId;
+    } else {
+      where.companyId = ctx.companyId;
+    }
 
     const users = await prisma.user.findMany({
-      where: { ...where, deletedAt: null },
+      where,
       include: { roles: { include: { role: true } } },
       orderBy: { createdAt: 'desc' },
       take: 10000,
@@ -176,12 +195,13 @@ class UserService {
     return buildWorkbookBuffer({ sheetName: 'Users', columns, rows });
   }
 
-  // ── Bulk import ────────────────────────────────────────────────────
-  async importFromFile(file, { companyId, actorId }) {
+  // ── Bulk import (always scoped to the caller's company) ─────────────
+  async importFromFile(file, ctx) {
     if (!file) throw ApiError.badRequest('No file uploaded', { code: 'NO_FILE' });
     const rows = await parseSheet(file.buffer, { mimetype: file.mimetype });
     if (!rows.length) throw ApiError.badRequest('The uploaded file has no data rows', { code: 'EMPTY_FILE' });
 
+    const companyId = ctx.companyId;
     const results = { total: rows.length, created: 0, skipped: 0, errors: [] };
 
     for (const raw of rows) {
@@ -191,7 +211,7 @@ class UserService {
           firstName: String(raw['First Name'] ?? raw.firstName ?? '').trim(),
           lastName: String(raw['Last Name'] ?? raw.lastName ?? '').trim(),
           phone: raw.Phone ?? raw.phone ?? undefined,
-          companyId: companyId ?? raw.companyId ?? undefined,
+          companyId,
           roleIds: [],
           sendWelcomeEmail: false,
         };
@@ -201,13 +221,13 @@ class UserService {
           results.skipped += 1;
           continue;
         }
-        await this.create(parsed, actorId);
+        await this.create(parsed, ctx);
         results.created += 1;
       } catch (err) {
         results.errors.push({ row: raw.__row, message: err.message?.slice(0, 300) });
       }
     }
-    await record({ action: 'IMPORT', entity: 'user', metadata: results, actorId });
+    await record({ action: 'IMPORT', entity: 'user', metadata: results, actorId: ctx.actorId });
     return results;
   }
 
@@ -226,7 +246,6 @@ class UserService {
   }
 
   #generateTempPassword() {
-    // Meets the strong-password policy: upper, lower, number, symbol.
     return `Hr!${randomToken(6)}9A`;
   }
 }

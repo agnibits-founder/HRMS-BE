@@ -180,6 +180,33 @@ async function main() {
   await put(`/companies/${newCoId}`, { status: 'ACTIVE' });
   const reLogin = await post('/auth/login', { email: 'jane@acme.test', password: 'Temp@1234' });
   rec('Reactivated → login works', reLogin.status === 200);
+
+  // ── TENANT ISOLATION (Acme admin must NOT see/touch Demo tenant) ──
+  const acme2H = { authorization: `Bearer ${reLogin.j.data.accessToken}`, 'content-type': 'application/json' };
+  const jget = (p) => fetch(`${api}${p}`, { headers: acme2H }).then((r) => r.json().then((j) => ({ status: r.status, j })));
+  const jpost = (p, b) => fetch(`${api}${p}`, { method: 'POST', headers: acme2H, body: JSON.stringify(b) }).then((r) => r.json().then((j) => ({ status: r.status, j })));
+  // super admin creates a user + custom role in Demo (own company)
+  const demoUser = await post('/users', { email: 'demo.user@hrms.local', firstName: 'Demo', lastName: 'User', password: 'Passw0rd!23', sendWelcomeEmail: false });
+  const demoUserId = demoUser.j.data.id;
+  const demoRole = await post('/roles', { name: 'DemoOnlyRole', permissions: ['user:read'] });
+  const demoRoleId = demoRole.j.data.id;
+  // Acme admin: list users → only own tenant
+  const acmeUsers = await jget('/users?limit=100');
+  rec('ISOLATION: /users excludes other tenant', !acmeUsers.j.data.some((u) => u.id === demoUserId) && acmeUsers.j.data.every((u) => u.companyId === newCoId));
+  // Acme admin: GET Demo user by id → 404
+  const crossUser = await jget(`/users/${demoUserId}`);
+  rec('ISOLATION: GET other-tenant user → 404', crossUser.status === 404);
+  // Acme admin: even if payload says companyId=Demo, user lands in Acme
+  const forced = await jpost('/users', { email: 'newbie@acme.test', firstName: 'New', lastName: 'Bie', password: 'Passw0rd!23', companyId: ownId, sendWelcomeEmail: false });
+  rec('ISOLATION: create forced to own company', forced.j.data?.companyId === newCoId);
+  // Acme admin: GET Demo role by id → 404; list excludes it
+  const crossRole = await jget(`/roles/${demoRoleId}`);
+  rec('ISOLATION: GET other-tenant role → 404', crossRole.status === 404);
+  const acmeRoles = await jget('/roles?limit=100');
+  rec('ISOLATION: /roles excludes other tenant', !acmeRoles.j.data.some((r) => r.id === demoRoleId));
+  // Super admin still sees across tenants
+  const superUsers = await get('/users?limit=100');
+  rec('Super admin sees all tenants', superUsers.j.data.some((u) => u.id === demoUserId) && superUsers.j.data.some((u) => u.companyId === newCoId));
   // reset-admin
   const reset = await post(`/companies/${newCoId}/reset-admin`, {});
   rec('POST /companies/:id/reset-admin', reset.status === 200 && !!reset.j.data?.tempPassword && reset.j.data.email === 'jane@acme.test');

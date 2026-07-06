@@ -27,7 +27,8 @@
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\(j.success?'✅ '+j.data.length+' companies, first: '+j.data[0]?.name+' \\(plan '+j.data[0]?.plan+', '+j.data[0]?.employeeCount+' employees\\)':'❌'+JSON.stringify\\(j.error\\)\\)}\\)\")",
       "Bash(curl -s --max-time 10 https://api.agnibits.com/health)",
       "Bash(curl -s --max-time 10 -X POST https://api.agnibits.com/api/v1/auth/login -H 'content-type: application/json' -d '{\"email\":\"admin@hrms.local\",\"password\":\"Admin@12345\"}')",
-      "Bash(ssh -i \"/c/Users/sarme/.ssh/HRM-Key.pem\" -o BatchMode=yes ubuntu@13.207.20.237 'cd ~/hrms-backend && docker compose -f docker-compose.prod.yml ps --format \"{{.Name}}: {{.Status}}\" && echo \"--- api logs ---\" && docker compose -f docker-compose.prod.yml logs api 2>&1 | tail -8')"
+      "Bash(ssh -i \"/c/Users/sarme/.ssh/HRM-Key.pem\" -o BatchMode=yes ubuntu@13.207.20.237 'cd ~/hrms-backend && docker compose -f docker-compose.prod.yml ps --format \"{{.Name}}: {{.Status}}\" && echo \"--- api logs ---\" && docker compose -f docker-compose.prod.yml logs api 2>&1 | tail -8')",
+      "Bash(ssh -i /c/Users/sarme/.ssh/HRM-Key.pem -o BatchMode=yes ubuntu@13.207.20.237 'cd ~/hrms-backend && \\\\ *)"
     ],
     "additionalDirectories": [
       "\\tmp"
