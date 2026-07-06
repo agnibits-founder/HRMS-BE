@@ -763,7 +763,9 @@ model Onboarding {
   employeeName String?
   startDate    DateTime
   buddy        String?
+  buddyName    String?
   manager      String?
+  managerName  String?
   status       OnboardingStatus @default(NOT_STARTED)
   progress     Int              @default(0)
   notes        String?

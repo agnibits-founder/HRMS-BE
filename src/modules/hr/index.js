@@ -435,15 +435,27 @@ export const hrModules = [
     searchFields: ['employeeName', 'buddy', 'manager'],
     sortFields: ['createdAt', 'startDate', 'status', 'progress'],
     filters: { status: 'status' },
-    mapInput: async (body) => ({
-      ...(await withEmployee(body)),
-      startDate: body.startDate,
-      buddy: body.buddy,
-      manager: body.manager,
-      status: body.status,
-      progress: body.progress,
-      notes: body.notes,
-    }),
+    mapInput: async (body) => {
+      const data = {
+        ...(await withEmployee(body)),
+        startDate: body.startDate,
+        status: body.status,
+        progress: body.progress,
+        notes: body.notes,
+      };
+      // Resolve buddy/manager (user id or email) → stored name, like employeeName.
+      if (body.buddy !== undefined) {
+        const u = await resolveUser(body.buddy);
+        data.buddy = u.id;
+        data.buddyName = u.name;
+      }
+      if (body.manager !== undefined) {
+        const u = await resolveUser(body.manager);
+        data.manager = u.id;
+        data.managerName = u.name;
+      }
+      return data;
+    },
     exportable: true,
     schemas: {
       list: listQuery({ status: z.enum(E.onboarding).optional() }),
