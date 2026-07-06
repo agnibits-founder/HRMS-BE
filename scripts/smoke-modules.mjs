@@ -127,12 +127,12 @@ async function main() {
   rec('POST /assets', asset.status === 201);
   const exp = await post('/expenses', { title: 'Taxi', employee: userId, amount: 25.5, date: '2026-07-02' });
   rec('POST /expenses (employeeName)', exp.status === 201 && !!exp.j.data.employeeName);
-  const tkt = await post('/tickets', { subject: 'Laptop slow', requester: userId, priority: 'HIGH' });
-  rec('POST /tickets (requesterName)', tkt.status === 201 && !!tkt.j.data.requesterName);
+  const tkt = await post('/tickets', { subject: 'Laptop slow', requester: userId, assignee: 'admin@hrms.local', priority: 'HIGH' });
+  rec('POST /tickets (requesterName + assigneeName)', tkt.status === 201 && !!tkt.j.data.requesterName && tkt.j.data.assigneeName === 'Super Admin');
   const onb = await post('/onboarding', { employee: userId, startDate: '2026-07-01', progress: 50, buddy: userId, manager: 'admin@hrms.local' });
   rec('POST /onboarding (buddy/manager names resolved)', onb.status === 201 && onb.j.data.progress === 50 && onb.j.data.buddyName === 'Super Admin' && onb.j.data.managerName === 'Super Admin', `buddy=${onb.j.data?.buddyName} mgr=${onb.j.data?.managerName}`);
-  const perf = await post('/performance-reviews', { employee: userId, reviewer: 'Alice', cycle: 'Q3', score: 4.5 });
-  rec('POST /performance-reviews', perf.status === 201);
+  const perf = await post('/performance-reviews', { employee: userId, reviewer: 'admin@hrms.local', cycle: 'Q3', score: 4.5 });
+  rec('POST /performance-reviews (reviewerName resolved)', perf.status === 201 && perf.j.data.reviewerName === 'Super Admin');
 
   // Notifications
   const notif = await post('/notifications', { title: 'Welcome', type: 'SUCCESS' });

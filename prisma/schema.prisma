@@ -788,6 +788,7 @@ model PerformanceReview {
   employeeId   String?
   employeeName String?
   reviewer     String
+  reviewerName String?
   cycle        ReviewCycle  @default(ANNUAL)
   score        Float        @default(0)
   status       ReviewStatus @default(DRAFT)
@@ -911,6 +912,7 @@ model Ticket {
   category      String?
   priority      TicketPriority @default(MEDIUM)
   assignee      String?
+  assigneeName  String?
   status        TicketStatus   @default(OPEN)
   description   String?
   createdAt     DateTime       @default(now())

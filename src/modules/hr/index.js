@@ -488,14 +488,21 @@ export const hrModules = [
     searchFields: ['employeeName', 'reviewer', 'summary'],
     sortFields: ['createdAt', 'cycle', 'status', 'score'],
     filters: { status: 'status', cycle: 'cycle' },
-    mapInput: async (body) => ({
-      ...(await withEmployee(body)),
-      reviewer: body.reviewer,
-      cycle: body.cycle,
-      score: body.score,
-      status: body.status,
-      summary: body.summary,
-    }),
+    mapInput: async (body) => {
+      const data = {
+        ...(await withEmployee(body)),
+        cycle: body.cycle,
+        score: body.score,
+        status: body.status,
+        summary: body.summary,
+      };
+      if (body.reviewer !== undefined) {
+        const u = await resolveUser(body.reviewer);
+        data.reviewer = u.id;
+        data.reviewerName = u.name;
+      }
+      return data;
+    },
     exportable: true,
     schemas: {
       list: listQuery({ status: z.enum(E.review).optional(), cycle: z.enum(E.cycle).optional() }),
@@ -663,7 +670,6 @@ export const hrModules = [
         subject: body.subject,
         category: body.category,
         priority: body.priority,
-        assignee: body.assignee,
         status: body.status,
         description: body.description,
       };
@@ -671,6 +677,11 @@ export const hrModules = [
         const u = await resolveUser(body.requester);
         data.requesterId = u.id;
         data.requesterName = u.name;
+      }
+      if (body.assignee !== undefined) {
+        const u = await resolveUser(body.assignee);
+        data.assignee = u.id;
+        data.assigneeName = u.name;
       }
       return data;
     },
