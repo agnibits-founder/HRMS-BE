@@ -344,6 +344,15 @@ async function main() {
   const hrFilter = await get(`/users?departmentId=${deptId}&employmentType=FULL_TIME`);
   rec('#4 filters ?departmentId & ?employmentType', hrFilter.j.data?.some((u) => u.id === hrUserId));
 
+  // Re-adding a previously DELETED employee must reactivate (soft-delete must not block create)
+  const reU = await post('/users', { email: 'rehire@test.com', firstName: 'Re', lastName: 'One', password: 'Passw0rd!23', sendWelcomeEmail: false });
+  const reUId = reU.j.data.id;
+  await fetch(`${api}/users/${reUId}`, { method: 'DELETE', headers: H });
+  const reAdd = await post('/users', { email: 'rehire@test.com', firstName: 'Re', lastName: 'Two', password: 'Passw0rd!23', sendWelcomeEmail: false });
+  rec('Re-add deleted employee → reactivated (same record, updated)', reAdd.status === 201 && reAdd.j.data?.id === reUId && reAdd.j.data?.lastName === 'Two' && reAdd.j.data?.status !== undefined);
+  const reLogin2 = await post('/auth/login', { email: 'rehire@test.com', password: 'Passw0rd!23' });
+  rec('Reactivated employee can log in', reLogin2.status === 200);
+
   // ── #6 resend-invite ──
   const invite = await post(`/users/${hrUserId}/resend-invite`, {});
   rec('#6 POST /users/:id/resend-invite', invite.status === 200 && !!invite.j.data?.tempPassword && invite.j.data?.email === 'hr.fields@hrms.local');

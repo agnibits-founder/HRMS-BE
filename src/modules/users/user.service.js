@@ -139,9 +139,14 @@ class UserService {
 
   async create(data, ctx) {
     const companyId = this.#targetCompany(ctx, data.companyId);
-    // Email is unique PER COMPANY — the same person can exist in other companies.
-    const existing = await userRepository.findByEmail(data.email, companyId ?? null);
-    if (existing) throw ApiError.conflict('A user with this email already exists in this company', { code: 'EMAIL_TAKEN' });
+    // Look up ANY user with this email in the company — including soft-deleted,
+    // because the unique (companyId, email) slot is held by trashed rows too.
+    const existing = await prisma.user.findFirst({
+      where: { email: data.email.toLowerCase(), companyId: companyId ?? null },
+    });
+    if (existing && !existing.deletedAt) {
+      throw ApiError.conflict('A user with this email already exists in this company', { code: 'EMAIL_TAKEN' });
+    }
 
     if (data.roleIds?.length) {
       await this.#assertRolesExist(data.roleIds, companyId);
@@ -150,9 +155,36 @@ class UserService {
 
     const tempPassword = data.password ?? this.#generateTempPassword();
     const passwordHash = await hashPassword(tempPassword);
-    const hr = await this.#hrPatch(data, companyId, { generateEmployeeId: true });
+    // Keep the prior employee code when re-activating; generate for a fresh user.
+    const hr = await this.#hrPatch(data, companyId, { generateEmployeeId: !existing });
 
+    const reactivating = !!existing; // existing here is always soft-deleted
     const user = await prisma.$transaction(async (tx) => {
+      if (reactivating) {
+        // Re-hire: restore the previously-deleted record with the new details.
+        const restored = await tx.user.update({
+          where: { id: existing.id },
+          data: {
+            deletedAt: null,
+            deletedById: null,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            phone: data.phone,
+            status: data.status ?? 'ACTIVE',
+            passwordHash,
+            updatedById: ctx.actorId,
+            ...hr,
+          },
+        });
+        await tx.userRole.deleteMany({ where: { userId: restored.id } });
+        if (data.roleIds?.length) {
+          await tx.userRole.createMany({
+            data: data.roleIds.map((roleId) => ({ userId: restored.id, roleId, assignedById: ctx.actorId })),
+            skipDuplicates: true,
+          });
+        }
+        return restored;
+      }
       const created = await tx.user.create({
         data: {
           email: data.email,
@@ -176,7 +208,14 @@ class UserService {
       return created;
     });
 
-    await record({ action: AuditAction.CREATE, entity: 'user', entityId: user.id, after: { email: user.email }, actorId: ctx.actorId });
+    await record({
+      action: reactivating ? AuditAction.RESTORE : AuditAction.CREATE,
+      entity: 'user',
+      entityId: user.id,
+      after: { email: user.email },
+      metadata: reactivating ? { reactivated: true } : undefined,
+      actorId: ctx.actorId,
+    });
 
     if (data.sendWelcomeEmail) {
       const tpl = templates.welcome({ name: user.firstName, email: user.email, tempPassword });
