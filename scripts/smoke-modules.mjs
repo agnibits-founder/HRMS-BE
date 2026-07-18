@@ -82,6 +82,11 @@ async function main() {
   // Designations (auto code + level)
   const desig = await post('/designations', { title: 'Senior Engineer', level: 5, department: 'Engineering' });
   rec('POST /designations (auto-code, dept resolve)', desig.status === 201, `code=${desig.j.data?.code}`);
+  // Designation.department is a REFERENCE: send departmentId, get departmentName back
+  const desigRef = await post('/designations', { title: 'Staff Engineer', level: 6, departmentId: dep.j.data.id });
+  rec('POST /designations (departmentId → departmentName resolved)',
+    desigRef.status === 201 && desigRef.j.data?.departmentId === dep.j.data.id && desigRef.j.data?.departmentName === 'Engineering',
+    `deptId=${desigRef.j.data?.departmentId} deptName=${desigRef.j.data?.departmentName}`);
 
   // Attendance → HH:MM times + workHours
   const att = await post('/attendance', { employee: userId, date: '2026-07-01', checkIn: '09:00', checkOut: '17:30', status: 'PRESENT' });

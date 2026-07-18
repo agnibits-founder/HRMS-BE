@@ -133,15 +133,23 @@ export const hrModules = [
     permissionPrefix: 'designation',
     searchFields: ['title', 'code'],
     sortFields: ['createdAt', 'title', 'level', 'status'],
-    include: { _count: { select: { employees: true } } },
-    transform: ({ _count, ...r }) => ({ ...r, employeeCount: _count?.employees ?? 0 }),
+    filters: { departmentId: 'departmentId' },
+    include: { department: { select: { name: true } }, _count: { select: { employees: true } } },
+    transform: ({ _count, department, ...r }) => ({
+      ...r,
+      departmentName: department?.name ?? null,
+      employeeCount: _count?.employees ?? 0,
+    }),
     mapInput: async (body, ctx) => {
       const data = {
         title: body.title,
         level: body.level,
         description: body.description,
       };
-      if (body.department !== undefined) data.departmentId = await resolveDepartmentId(body.department, ctx.companyId);
+      // Department is a reference (pick an existing one). Prefer departmentId
+      // (from a dropdown); fall back to `department` name-or-id for back-compat.
+      const deptRef = body.departmentId !== undefined ? body.departmentId : body.department;
+      if (deptRef !== undefined) data.departmentId = await resolveDepartmentId(deptRef, ctx.companyId);
       if (body.status !== undefined) data.status = body.status;
       if (body.title) data.code = `${slug(body.title)}-${nanoid(4)}`;
       return data;
@@ -151,6 +159,7 @@ export const hrModules = [
       list: listQuery(),
       create: z.object({
         title: nstr,
+        departmentId: z.string().nullable().optional(),
         department: ostr,
         level: z.coerce.number().int().min(1).max(15),
         description: ostr,
@@ -158,6 +167,7 @@ export const hrModules = [
       }),
       update: partial({
         title: nstr,
+        departmentId: z.string().nullable(),
         department: z.string().nullable(),
         level: z.coerce.number().int().min(1).max(15),
         description: ostr,
