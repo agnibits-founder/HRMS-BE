@@ -24,7 +24,7 @@ const LOCK_MINUTES = 15;
  */
 class AuthService {
   // ── Login ────────────────────────────────────────────────────────────
-  async login({ email, password, deviceInfo }) {
+  async login({ email, password, deviceInfo, portal = 'hrms' }) {
     const user = await userRepository.findByEmailWithPermissions(email);
 
     // Constant-ish behavior: run a dummy verify to reduce user enumeration timing.
@@ -51,6 +51,22 @@ class AuthService {
       await this.#registerFailedLogin(user);
       await record({ action: AuditAction.LOGIN_FAILED, entity: 'auth', entityId: user.id, actorId: user.id, companyId: user.companyId, status: 'FAILURE' });
       throw ApiError.unauthorized('Invalid email or password', { code: 'INVALID_CREDENTIALS' });
+    }
+
+    // Portal separation: the Agnibits platform SUPER_ADMIN belongs to the master
+    // console, not the tenant HRMS product — and vice-versa.
+    const isPlatformAdmin =
+      user.roleNames.includes('SUPER_ADMIN') ||
+      (user.permissionList ?? []).some((p) => p === '*' || p === 'platform:manage');
+    if (portal === 'hrms' && isPlatformAdmin) {
+      throw ApiError.forbidden('Platform administrators sign in via the Agnibits console, not the HRMS app.', {
+        code: 'USE_PLATFORM_PORTAL',
+      });
+    }
+    if (portal === 'platform' && !isPlatformAdmin) {
+      throw ApiError.forbidden('This portal is for Agnibits platform administrators only.', {
+        code: 'USE_HRMS_PORTAL',
+      });
     }
 
     // Reset lockout counters on success.

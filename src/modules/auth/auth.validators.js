@@ -19,6 +19,10 @@ export const loginSchema = z.object({
   email,
   password: z.string().min(1, 'Password is required'),
   deviceName: z.string().max(120).optional(),
+  // Which app is signing in: 'hrms' = tenant product (default), 'platform' =
+  // the Agnibits master console. Enforces that platform admins and tenant users
+  // use their own portal.
+  portal: z.enum(['hrms', 'platform']).optional().default('hrms'),
 });
 
 export const mfaVerifySchema = z.object({

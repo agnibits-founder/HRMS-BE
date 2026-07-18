@@ -52,7 +52,7 @@ async function main() {
 
   const api = `http://localhost:${APP_PORT}/api/v1`;
   const login = await (
-    await fetch(`${api}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'admin@hrms.local', password: 'Admin@12345' }) })
+    await fetch(`${api}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'admin@hrms.local', password: 'Admin@12345', portal: 'platform' }) })
   ).json();
   const token = login.data.accessToken;
   const userId = login.data.user.id;
@@ -216,6 +216,17 @@ async function main() {
   const reLogin = await post('/auth/login', { email: 'jane@acme.test', password: 'Temp@1234' });
   rec('Reactivated → login works', reLogin.status === 200);
 
+  // ── PORTAL SEPARATION (SUPER_ADMIN ↔ HRMS product) ──
+  const rawLogin = (body) => fetch(`${api}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json().then((j) => ({ status: r.status, j })));
+  const suHrms = await rawLogin({ email: 'admin@hrms.local', password: 'Admin@12345', portal: 'hrms' });
+  rec('Portal: SUPER_ADMIN on HRMS portal → 403', suHrms.status === 403 && suHrms.j.error?.code === 'USE_PLATFORM_PORTAL');
+  const suDefault = await rawLogin({ email: 'admin@hrms.local', password: 'Admin@12345' });
+  rec('Portal: SUPER_ADMIN default(hrms) blocked', suDefault.status === 403);
+  const tenantPlatform = await rawLogin({ email: 'jane@acme.test', password: 'Temp@1234', portal: 'platform' });
+  rec('Portal: tenant admin on platform portal → 403', tenantPlatform.status === 403 && tenantPlatform.j.error?.code === 'USE_HRMS_PORTAL');
+  const tenantHrms = await rawLogin({ email: 'jane@acme.test', password: 'Temp@1234', portal: 'hrms' });
+  rec('Portal: tenant admin on HRMS portal → 200', tenantHrms.status === 200);
+
   // ── TENANT ISOLATION (Acme admin must NOT see/touch Demo tenant) ──
   const acme2H = { authorization: `Bearer ${reLogin.j.data.accessToken}`, 'content-type': 'application/json' };
   const jget = (p) => fetch(`${api}${p}`, { headers: acme2H }).then((r) => r.json().then((j) => ({ status: r.status, j })));
@@ -273,7 +284,7 @@ async function main() {
   const logoRes = await fetch(`${api}/companies/${ownId}/logo`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: fd });
   const logoJson = await logoRes.json();
   rec('POST /companies/:id/logo', logoRes.status === 200 && !!logoJson.data?.logoUrl, `url=${logoJson.data?.logoUrl}`);
-  const relog = await post('/auth/login', { email: 'admin@hrms.local', password: 'Admin@12345' });
+  const relog = await post('/auth/login', { email: 'admin@hrms.local', password: 'Admin@12345', portal: 'platform' });
   rec('login → user.company.logoUrl present', !!relog.j.data?.user?.company?.logoUrl);
   const me2 = await get('/auth/me');
   rec('/auth/me → user.company (name+logoUrl)', !!me2.j.data?.company?.name && !!me2.j.data?.company?.logoUrl);
