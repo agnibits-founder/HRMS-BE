@@ -645,6 +645,10 @@ model Leave {
   endDate      DateTime
   reason       String
   status       LeaveStatus @default(PENDING)
+  // Approval workflow
+  decisionReason String? // reason captured on reject (or note on approve)
+  decidedById    String?
+  decidedAt      DateTime?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   deletedAt    DateTime?
@@ -655,6 +659,7 @@ model Leave {
   @@index([companyId])
   @@index([status])
   @@index([type])
+  @@index([employeeId])
   @@index([deletedAt])
   @@map("leaves")
 }

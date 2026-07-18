@@ -104,6 +104,41 @@ async function main() {
   const within = await post('/leaves', { employee: userId, type: 'ANNUAL', startDate: '2026-08-01', endDate: '2026-08-05', reason: 'ok' }); // 5d <= 17
   rec('POST /leaves (within balance → 201)', within.status === 201);
 
+  // ── P2 Leave approval workflow ──
+  const rolesForWf = await get('/roles?limit=20');
+  const employeeRole = rolesForWf.j.data.find((r) => r.name === 'EMPLOYEE');
+  const wfMgr = await post('/users', { email: 'wf.mgr@hrms.local', firstName: 'Wf', lastName: 'Mgr', password: 'Passw0rd!23', sendWelcomeEmail: false, roleIds: [employeeRole.id] });
+  const wfMgrId = wfMgr.j.data.id;
+  const wfEmp = await post('/users', { email: 'wf.emp@hrms.local', firstName: 'Wf', lastName: 'Emp', password: 'Passw0rd!23', sendWelcomeEmail: false, roleIds: [employeeRole.id], managerId: wfMgrId });
+  const wfEmpId = wfEmp.j.data.id;
+  rec('P2 setup: employee.managerName resolved', wfEmp.j.data.managerName === 'Wf Mgr');
+  const apply = await post('/leaves', { employee: wfEmpId, type: 'ANNUAL', startDate: '2026-09-01', endDate: '2026-09-03', reason: 'Vacation' });
+  const leaveId = apply.j.data?.id;
+  rec('P2 apply → PENDING', apply.status === 201 && apply.j.data?.status === 'PENDING');
+  const mgrTok = (await post('/auth/login', { email: 'wf.mgr@hrms.local', password: 'Passw0rd!23' })).j.data.accessToken;
+  const mh = { authorization: `Bearer ${mgrTok}`, 'content-type': 'application/json' };
+  const mf = (m, p, b) => fetch(`${api}${p}`, { method: m, headers: mh, body: b ? JSON.stringify(b) : undefined }).then((r) => r.json().then((j) => ({ status: r.status, j })));
+  const queue = await mf('GET', '/leaves?pendingApproval=me');
+  rec('P2 manager queue (?pendingApproval=me)', queue.j.data?.some((l) => l.id === leaveId));
+  const mnotif = await mf('GET', '/notifications');
+  rec('P2 manager notified on apply', mnotif.j.data?.some((n) => /leave request/i.test(n.title)));
+  const badReject = await mf('POST', `/leaves/${leaveId}/reject`, {});
+  rec('P2 reject without reason → 422', badReject.status === 422);
+  const approved = await mf('POST', `/leaves/${leaveId}/approve`);
+  rec('P2 manager approve → APPROVED', approved.status === 200 && approved.j.data?.status === 'APPROVED');
+  const empTok = (await post('/auth/login', { email: 'wf.emp@hrms.local', password: 'Passw0rd!23' })).j.data.accessToken;
+  const enotif = await fetch(`${api}/notifications`, { headers: { authorization: `Bearer ${empTok}` } }).then((r) => r.json());
+  rec('P2 employee notified on decision', enotif.data?.some((n) => /approved/i.test(n.title)));
+  const balA = await get(`/leaves/balance?employee=${wfEmpId}`);
+  rec('P2 balance counts approved leave (used=3)', (balA.j.data || []).find((b) => b.code === 'ANNUAL')?.used === 3);
+  const cancel = await post(`/leaves/${leaveId}/cancel`, {});
+  rec('P2 cancel → CANCELLED', cancel.status === 200 && cancel.j.data?.status === 'CANCELLED');
+  const balB = await get(`/leaves/balance?employee=${wfEmpId}`);
+  rec('P2 cancel restores balance (used=0)', ((balB.j.data || []).find((b) => b.code === 'ANNUAL')?.used ?? -1) === 0);
+  const mgrLeave = await post('/leaves', { employee: wfMgrId, type: 'ANNUAL', startDate: '2026-10-01', endDate: '2026-10-02', reason: 'Self' });
+  const selfApprove = await mf('POST', `/leaves/${mgrLeave.j.data.id}/approve`);
+  rec('P2 self-approval blocked → 403', selfApprove.status === 403 && selfApprove.j.error?.code === 'SELF_APPROVAL');
+
   // Payroll → net
   const pay = await post('/payroll', { employee: userId, period: '2026-07', gross: 5000, deductions: 500, bonus: 200 });
   rec('POST /payroll (net = gross-ded+bonus)', pay.status === 201 && pay.j.data.net === 4700, `net=${pay.j.data?.net}`);

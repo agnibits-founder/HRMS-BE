@@ -15,6 +15,8 @@ import {
   dayCount,
 } from './helpers.js';
 import { computeBalances, assertBalance } from './leaveBalance.js';
+import { transitionLeave, notifyManagerOnApply, pendingApprovalQueue } from './leaveWorkflow.js';
+import { paginated } from '../../utils/ApiResponse.js';
 
 /**
  * All standard HR CRUD modules, defined declaratively via the CRUD factory.
@@ -174,13 +176,24 @@ export const hrModules = [
       reason: body.reason,
       status: body.status,
     }),
-    // Block over-requests against the employee's remaining balance.
+    // Applying: block over-requests, then notify the applicant's manager.
     beforeCreate: async (data, ctx) => {
       await assertBalance(ctx.companyId, data);
+      if (!data.status || data.status === 'PENDING') await notifyManagerOnApply(data);
       return data;
     },
-    // GET /leaves/balance?employee=<id|email> → per-policy allocated/used/remaining
-    extendRouter: (router, { ok, asyncHandler, authorize }) => {
+    // Approval workflow + balance + manager queue.
+    extendRouter: (router, { ok, asyncHandler, authorize, validate }) => {
+      // GET /leaves?pendingApproval=me → manager's approval queue (falls through otherwise)
+      router.get(
+        '/',
+        asyncHandler(async (req, res, next) => {
+          if ((req.query.pendingApproval ?? '') !== 'me') return next();
+          const { items, pagination } = await pendingApprovalQueue(req.user, req.query);
+          return paginated(res, items, pagination, 'Pending approvals');
+        })
+      );
+      // GET /leaves/balance?employee=<id|email>
       router.get(
         '/balance',
         authorize('leave:read'),
@@ -190,6 +203,20 @@ export const hrModules = [
           const balances = await computeBalances(req.user.companyId, u.id ?? ref);
           return ok(res, balances, 'Leave balance');
         })
+      );
+      // Transitions — authorization handled inside (manager-of-employee or HR/ADMIN).
+      router.post(
+        '/:id/approve',
+        asyncHandler(async (req, res) => ok(res, await transitionLeave({ id: req.params.id, action: 'approve', actor: req.user }), 'Leave approved'))
+      );
+      router.post(
+        '/:id/reject',
+        validate({ body: z.object({ reason: z.string().trim().min(1).max(500) }) }),
+        asyncHandler(async (req, res) => ok(res, await transitionLeave({ id: req.params.id, action: 'reject', reason: req.body.reason, actor: req.user }), 'Leave rejected'))
+      );
+      router.post(
+        '/:id/cancel',
+        asyncHandler(async (req, res) => ok(res, await transitionLeave({ id: req.params.id, action: 'cancel', actor: req.user }), 'Leave cancelled'))
       );
     },
     exportable: true,
