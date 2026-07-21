@@ -14,6 +14,7 @@ import {
   resolveDepartmentId,
   workHoursBetween,
   dayCount,
+  levelLabel,
 } from './helpers.js';
 import { computeBalances, assertBalance } from './leaveBalance.js';
 import { transitionLeave, notifyManagerOnApply, pendingApprovalQueue } from './leaveWorkflow.js';
@@ -154,6 +155,7 @@ export const hrModules = [
     transform: ({ department, ...r }) => ({
       ...r,
       departmentName: department?.name ?? null,
+      levelLabel: levelLabel(r.level), // human band for the raw level, e.g. 9 → "Lead"
       employeeCount: 0,
     }),
     enrich: withEmployeeCount('designationId'),

@@ -20,6 +20,28 @@ export const isoDate = z.coerce.date();
 export const optDate = z.coerce.date().nullable().optional();
 export const nstr = z.string().trim().min(1);
 export const ostr = z.string().trim().nullable().optional();
+
+/**
+ * Human-readable seniority band for a numeric designation level (1–15). The raw
+ * number sorts/compares well but reads poorly ("L9"), so we surface a label the
+ * UI can show alongside it ("L9 · Lead"). This is a sensible default ladder;
+ * companies get their own custom names in a later leveling-framework feature.
+ */
+const LEVEL_BANDS = [
+  [2, 'Entry'],
+  [4, 'Junior'],
+  [6, 'Mid'],
+  [8, 'Senior'],
+  [10, 'Lead'],
+  [12, 'Manager'],
+  [14, 'Director'],
+  [15, 'Executive'],
+];
+export const levelLabel = (level) => {
+  if (level == null) return null;
+  const band = LEVEL_BANDS.find(([max]) => level <= max);
+  return band ? band[1] : null;
+};
 /** Time-of-day "HH:MM" (00:00–23:59), for attendance check-in/out. */
 export const hhmm = z
   .string()

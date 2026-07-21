@@ -87,6 +87,10 @@ async function main() {
   rec('POST /designations (departmentId → departmentName resolved)',
     desigRef.status === 201 && desigRef.j.data?.departmentId === dep.j.data.id && desigRef.j.data?.departmentName === 'Engineering',
     `deptId=${desigRef.j.data?.departmentId} deptName=${desigRef.j.data?.departmentName}`);
+  // Raw level (6) gets a human band label ("Mid"); L9 → "Lead"
+  rec('Designation level → levelLabel band', desigRef.j.data?.levelLabel === 'Mid', `level=6 label=${desigRef.j.data?.levelLabel}`);
+  const desigL9 = await post('/designations', { title: 'Eng Lead', level: 9, departmentId: dep.j.data.id });
+  rec('Designation L9 → "Lead" label', desigL9.j.data?.levelLabel === 'Lead', `label=${desigL9.j.data?.levelLabel}`);
   // Level is OPTIONAL — a title with no leveling framework must still create
   const desigNoLvl = await post('/designations', { title: 'Office Coordinator' });
   rec('POST /designations (level optional)', desigNoLvl.status === 201 && (desigNoLvl.j.data?.level ?? null) === null, `level=${desigNoLvl.j.data?.level}`);
