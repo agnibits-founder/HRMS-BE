@@ -87,6 +87,9 @@ async function main() {
   rec('POST /designations (departmentId → departmentName resolved)',
     desigRef.status === 201 && desigRef.j.data?.departmentId === dep.j.data.id && desigRef.j.data?.departmentName === 'Engineering',
     `deptId=${desigRef.j.data?.departmentId} deptName=${desigRef.j.data?.departmentName}`);
+  // Level is OPTIONAL — a title with no leveling framework must still create
+  const desigNoLvl = await post('/designations', { title: 'Office Coordinator' });
+  rec('POST /designations (level optional)', desigNoLvl.status === 201 && (desigNoLvl.j.data?.level ?? null) === null, `level=${desigNoLvl.j.data?.level}`);
 
   // Attendance → HH:MM times + workHours
   const att = await post('/attendance', { employee: userId, date: '2026-07-01', checkIn: '09:00', checkOut: '17:30', status: 'PRESENT' });

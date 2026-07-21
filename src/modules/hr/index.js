@@ -161,7 +161,9 @@ export const hrModules = [
         title: nstr,
         departmentId: z.string().nullable().optional(),
         department: ostr,
-        level: z.coerce.number().int().min(1).max(15),
+        // Optional job-leveling band (1 junior … 15 executive). Not every org
+        // runs a leveling framework, so don't force it.
+        level: z.coerce.number().int().min(1).max(15).nullable().optional(),
         description: ostr,
         status: z.enum(E.entity).optional(),
       }),
@@ -169,7 +171,7 @@ export const hrModules = [
         title: nstr,
         departmentId: z.string().nullable(),
         department: z.string().nullable(),
-        level: z.coerce.number().int().min(1).max(15),
+        level: z.coerce.number().int().min(1).max(15).nullable(),
         description: ostr,
         status: z.enum(E.entity),
       }),
