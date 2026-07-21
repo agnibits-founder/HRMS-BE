@@ -193,6 +193,9 @@ async function main() {
   rec('POST /onboarding (manager inherited from new hire, buddy resolved)',
     onb.status === 201 && onb.j.data.progress === 50 && onb.j.data.buddyName === 'Super Admin' && onb.j.data.managerName === 'Wf Mgr',
     `buddy=${onb.j.data?.buddyName} mgr=${onb.j.data?.managerName} (expected Wf Mgr, not Super Admin)`);
+  // A new hire can't be their own buddy → 422
+  const selfBuddy = await post('/onboarding', { employee: wfEmp.j.data.id, startDate: '2026-07-01', buddy: wfEmp.j.data.id });
+  rec('POST /onboarding (self-buddy rejected)', selfBuddy.status === 422 && selfBuddy.j.error?.code === 'BUDDY_IS_NEW_HIRE', `status=${selfBuddy.status} code=${selfBuddy.j.error?.code}`);
   const perf = await post('/performance-reviews', { employee: userId, reviewer: 'admin@hrms.local', cycle: 'Q3', score: 4.5 });
   rec('POST /performance-reviews (reviewerName resolved)', perf.status === 201 && perf.j.data.reviewerName === 'Super Admin');
 

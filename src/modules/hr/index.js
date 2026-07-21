@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { defineCrudModule } from '../../core/crudModule.js';
 import { prisma } from '../../config/prisma.js';
+import { ApiError } from '../../utils/ApiError.js';
 import { nanoid } from 'nanoid';
 import {
   listQuery,
@@ -540,7 +541,7 @@ export const hrModules = [
     searchFields: ['employeeName', 'buddy', 'manager'],
     sortFields: ['createdAt', 'startDate', 'status', 'progress'],
     filters: { status: 'status' },
-    mapInput: async (body) => {
+    mapInput: async (body, _ctx, before) => {
       const emp = await withEmployee(body);
       const data = {
         ...emp,
@@ -554,6 +555,11 @@ export const hrModules = [
         const u = await resolveUser(body.buddy);
         data.buddy = u.id;
         data.buddyName = u.name;
+        // A new hire can't be their own onboarding buddy — reject clearly.
+        const hireId = emp.employeeId ?? before?.employeeId;
+        if (u.id && hireId && u.id === hireId) {
+          throw ApiError.unprocessable("An employee can't be their own onboarding buddy", { code: 'BUDDY_IS_NEW_HIRE' });
+        }
       }
       // Reporting manager is NOT entered here. It's the org relationship that
       // lives on the employee record (User.managerId) — the single source of
